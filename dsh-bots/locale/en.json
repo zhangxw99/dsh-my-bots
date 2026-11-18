@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "DSH Bots",
+    "description": "Persistent multi-bot team: bind long-lived bot identities to real agent presets, chat in native DSH sessions, fork presets, and keep bindings across restarts.",
+    "detail": "docs/DETAIL.md"
+  }
+}

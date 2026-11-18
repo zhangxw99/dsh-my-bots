@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "DSH Bots",
+    "description": "持久多 Bot 团队：将长期 Bot 身份绑定到真实 Agent Preset，在原生 DSH 会话中聊天，支持 Fork Preset，重启后保留绑定关系。",
+    "detail": "docs/DETAIL.md"
+  }
+}

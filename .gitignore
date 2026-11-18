@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+.direnv/
+
+# build artifacts
+*.log
+tmp/
+
+# OS noise
+.DS_Store
+
+# local scratch
+*.tmp
+.tmp-*
