@@ -9,7 +9,7 @@
  * src/session-manager.mjs; see their headers for the verified-vs-assumed list.
  */
 
-export const inject = ['agents', 'agentPresets', 'webServer', 'sessionQuery', 'storageDomain', 'agentDefaultModel', 'pluginManager']
+export const inject = ['agents', 'agentPresets', 'webServer', 'sessionQuery', 'storageDomain', 'agentDefaultModel', 'pluginManager', 'sessionController']
 
 import { resolveStateDir } from './src/state-dir.mjs'
 import { openBotsDomain } from './src/domain.mjs'
@@ -18,6 +18,7 @@ import { createBotManager } from './src/bot-manager.mjs'
 import { createSessionManager } from './src/session-manager.mjs'
 import { createPresetForker } from './src/preset-forker.mjs'
 import { registerApi } from './src/api.mjs'
+import { ensureMasterPreset } from './src/master-preset.mjs'
 
 export function apply(ctx, config) {
   const stateDir = resolveStateDir(config.stateDir)
@@ -53,6 +54,11 @@ export function apply(ctx, config) {
     await runtime.bots.validatePresetReferences()
     const disposeApi = registerApi(runtime)
     ctx.logger?.info?.('dsh-bots ready at %s', stateDir)
+    // Bootstrap the shared "master" preset in the background: the base every
+    // new bot preset forks from. Never blocks readiness nor fails the plugin.
+    void ensureMasterPreset(runtime).catch((error) => {
+      ctx.logger?.error?.('dsh-bots master preset bootstrap failed: %s', String(error?.message ?? error))
+    })
     return disposeApi
   })()
 

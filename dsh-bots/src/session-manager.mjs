@@ -86,21 +86,35 @@ export function createSessionManager(runtime) {
   }
 
   /**
-   * Bot modelOverride wins; otherwise fall back to the deployment's default
-   * model selection (agentDefaultModel.currentSelection), mirroring the
-   * native new-session behavior. Returns undefined when nothing is configured,
-   * which the turn surfaces as a clear error instead of a runtime turn error.
+   * Resolution order for a turn's model:
+   *   1. the bot's modelOverride (set at creation or on the bot),
+   *   2. the host model catalog's default (what a new native session would use),
+   *   3. the agent-default-model configuration selection.
+   * Returns { options } or { error } with a user-facing message.
    */
-  function resolveAgentOptions(bot) {
+  async function resolveAgentOptions(bot) {
     const override = agentOptionsFor(bot)
-    if (override) return { options: override }
+    if (override) return { options: override, source: 'bot override' }
+
+    let catalogDefault = null
+    try {
+      const catalog = await ctx.sessionController?.modelCatalog?.()
+      if (catalog?.default?.provider && catalog?.default?.model) {
+        catalogDefault = { provider: catalog.default.provider, model: catalog.default.model }
+      }
+    } catch { /* catalog unavailable */ }
+    if (catalogDefault) return { options: catalogDefault, source: 'model catalog default' }
+
     try {
       const sel = ctx.agentDefaultModel?.currentSelection?.()
-      if (sel?.provider && sel?.model) return { options: { provider: sel.provider, model: sel.model } }
-    } catch {
-      // no default selection available
+      if (sel?.provider && sel?.model) return { options: { provider: sel.provider, model: sel.model }, source: 'agent default model' }
+    } catch { /* no configured default */ }
+
+    return {
+      error:
+        'no model configured: pick a model when creating the bot, set a default model in DSH settings, '
+        + 'or check that a model provider is signed in',
     }
-    return { options: undefined }
   }
 
   function setupFor(bot) {
@@ -261,12 +275,9 @@ export function createSessionManager(runtime) {
       const run = async () => {
         const trimmed = String(text ?? '').trim()
         if (trimmed === '') throw new Error('text is required')
-        const { options: agentOptions } = resolveAgentOptions(bot)
-        if (!agentOptions) {
-          throw new Error(
-            'no model configured: set modelOverride on the bot or configure a default model in DSH settings',
-          )
-        }
+        const { options: agentOptions, source, error } = await resolveAgentOptions(bot)
+        if (!agentOptions) throw new Error(error)
+        ctx.logger?.info?.('dsh-bots chat model via %s: %s/%s', source, agentOptions.provider, agentOptions.model)
 
         let binding = await latestDirectBinding(bot.id)
         let agent

@@ -46,6 +46,57 @@ function segmentsOf(url) {
   return path.split('/').filter((s) => s !== '')
 }
 
+/**
+ * Bot creation with a per-bot preset: fork `basePreset` (default "master")
+ * into `${botId}-preset` and bind the bot to that fork, so every bot owns a
+ * preset derived from the master. Falls back to referencing the base when the
+ * fork cannot be installed, and reports what happened.
+ */
+async function createBot(runtime, body) {
+  const { bots, forker, presetAdapter } = runtime
+  const name = String(body?.name ?? '').trim()
+  if (name === '') throw new Error('name is required')
+
+  const roster = await presetAdapter.list()
+  const healthy = roster.filter((p) => !p.broken)
+  const basePreset =
+    healthy.find((p) => p.id === (body?.basePreset ?? 'master')) ??
+    healthy.find((p) => p.id === 'master') ??
+    healthy.find((p) => p.isDefault) ??
+    healthy[0]
+  if (!basePreset) throw new Error('no healthy preset available to base the bot on')
+
+  const warnings = []
+  let presetId = body?.presetId ? String(body.presetId) : basePreset.id
+
+  // Auto-fork unless the caller pinned an explicit presetId.
+  if (!body?.presetId) {
+    const botId = bots.deriveBotId(name)
+    const fork = await forker.fork({
+      sourceId: basePreset.id,
+      newId: bots.presetIdFor(botId),
+      name: `${name} preset`,
+      description: `Preset for bot "${name}" (forked from ${basePreset.id})`,
+    })
+    if (fork.installed) {
+      presetId = fork.newId
+    } else {
+      warnings.push(`preset fork failed, referencing ${basePreset.id}: ${fork.detail}`)
+    }
+  }
+
+  const bot = await bots.create({
+    name,
+    description: body?.description,
+    presetId,
+    modelOverride:
+      body?.provider && body?.model
+        ? { providerId: String(body.provider), modelId: String(body.model) }
+        : undefined,
+  })
+  return { bot, warnings, basePreset: basePreset.id }
+}
+
 export function registerApi(runtime) {
   const { ctx, bots, sessions, presetAdapter, forker } = runtime
 
@@ -79,11 +130,31 @@ export function registerApi(runtime) {
       }
     }
 
-    // /bots, /bots/:id, /bots/:id/chat, /bots/:id/sessions, /bots/:id/messages
+    // GET /models — provider groups for the picker + the host default selection.
+    if (method === 'GET' && seg[0] === 'models') {
+      const catalog = await ctx.sessionController.modelCatalog().catch((error) => ({
+        failures: [{ id: 'catalog', name: 'catalog', message: String(error?.message ?? error) }],
+        groups: [], routableProviders: [], default: null,
+      }))
+      let defaultSelection = null
+      try {
+        const sel = ctx.agentDefaultModel?.currentSelection?.()
+        if (sel?.provider && sel?.model) defaultSelection = { provider: sel.provider, model: sel.model }
+      } catch { /* no configured default */ }
+      return send(res, 200, {
+        default: catalog.default ?? defaultSelection,
+        configDefault: defaultSelection,
+        groups: catalog.groups ?? [],
+        failures: catalog.failures ?? [],
+      })
+    }
+
+    // /bots, /bots/:id, /bots/:id/chat, /bots/:id/sessions, /bots/:id/messages, /bots/:id/events
     if (seg[0] === 'bots') {
       if (method === 'GET' && seg.length === 1) return send(res, 200, { bots: bots.list() })
       if (method === 'POST' && seg.length === 1) {
-        return send(res, 200, { bot: await bots.create(await readBody(req)) })
+        const body = await readBody(req)
+        return send(res, 200, await createBot(runtime, body))
       }
       const id = seg[1]
       if (id !== undefined && seg.length === 2) {

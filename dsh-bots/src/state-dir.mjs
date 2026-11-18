@@ -1,10 +1,20 @@
 import { homedir } from 'node:os'
 import path from 'node:path'
 
-/** Resolve the plugin state directory. Empty/absent config falls back to ~/.dsh/bots. */
+/**
+ * Resolve the DeepSeek Harness home the same way @deepseek-ai/dsh-home-paths
+ * does: explicit configured path > $DSH_HOME > ~/.dsh.
+ */
+function resolveDshHome() {
+  const env = process.env.DSH_HOME
+  if (typeof env === 'string' && env.trim() !== '') return path.resolve(env.trim())
+  return path.join(homedir(), '.dsh')
+}
+
+/** Resolve the plugin state directory. Empty/absent config falls back to <dsh home>/bots. */
 export function resolveStateDir(configured) {
   const raw = typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : null
-  const base = raw && path.isAbsolute(raw) ? raw : path.join(homedir(), '.dsh', 'bots')
+  const base = raw && path.isAbsolute(raw) ? raw : path.join(resolveDshHome(), 'bots')
   return path.resolve(base)
 }
 

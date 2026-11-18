@@ -15,6 +15,12 @@ globalThis.window = {
     load({ id, factory }) { registrations.push({ id, factory }) },
   },
 }
+// Minimal document stub: apply() inserts a stylesheet element.
+const styleEl = { attrs: {}, text: '', setAttribute(k, v) { this.attrs[k] = v }, remove() {} }
+globalThis.document = {
+  createElement: () => styleEl,
+  head: { append() {} },
+}
 
 await import('../dsh-bots/client.js')
 assert.equal(registrations.length, 1, 'module registers itself once')
@@ -30,13 +36,16 @@ const mod = registrations[0].factory(requireInClient)
 assert.equal(mod.inject[0], 'slots')
 
 const injected = []
+const effects = []
 const stubCtx = {
+  effect(fn, label) { effects.push([label, fn]); return () => {} },
   slots: {
     inject(slotName, register) { injected.push([slotName, register]) },
     register(options, component) { return { options, component } },
   },
 }
 mod.apply(stubCtx)
+assert.equal(effects.length, 1, 'stylesheet registered via ctx.effect')
 assert.equal(injected.length, 2, 'apply injects sidebar.panellist + main')
 assert.equal(injected[0][0], 'sidebar.panellist')
 assert.equal(injected[1][0], 'main')

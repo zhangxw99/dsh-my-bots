@@ -8,7 +8,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { isValidId, mintId, nowMs } from './state-dir.mjs'
+import { isValidId, mintId, nowMs, sanitizeId } from './state-dir.mjs'
 
 export function createBotManager(runtime) {
   const { domain, stateDir, presetAdapter } = runtime
@@ -28,6 +28,20 @@ export function createBotManager(runtime) {
 
   return {
     workspaceOf,
+
+    /** The per-bot preset id derived from a bot id ("master-fork" chain). */
+    presetIdFor(botId) {
+      return `${sanitizeId(botId, 'bot').slice(0, 40)}-preset`
+    },
+
+    /** Derive a readable, unique bot id from a display name. */
+    deriveBotId(name) {
+      const base = sanitizeId(name, 'bot').slice(0, 40)
+      let candidate = base
+      let n = 2
+      while (table().get(candidate) !== undefined) candidate = `${base}-${n++}`
+      return candidate
+    },
 
     list({ includeDeleted = false } = {}) {
       const rows = [...table().entries()].map(([, v]) => v).filter((b) => !b.deletedAt || includeDeleted)
